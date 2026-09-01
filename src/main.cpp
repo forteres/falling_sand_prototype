@@ -24,6 +24,13 @@ class Game {
             Material material = Material::Air;
         };
         vector<Cell> cells;
+
+        struct Color {
+            uint8_t r, g, b, a;
+        };
+        vector<Color> pixels;
+        GLuint texture = 0;
+
         bool running = true;
 
         GLFWwindow* window = nullptr;
@@ -33,6 +40,7 @@ class Game {
         void render(double alpha);
         Cell& getCell(int x, int y);        
         bool isInBounds(int x, int y);
+        Color materialColor(Material material);
 };
 
 void Game::run(){
@@ -44,8 +52,6 @@ void Game::run(){
 
         while (running && !glfwWindowShouldClose(window))
         {
-            glfwPollEvents();
-
             const auto now = clock::now();
             double frame = chrono::duration<double>(now - last).count();
             last = now;
@@ -60,6 +66,7 @@ void Game::run(){
             }
 
             render(accumulator / dt);
+            glfwPollEvents();
         }
 
         glfwDestroyWindow(window);
@@ -92,6 +99,15 @@ void Game::init() {
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
     cells.resize(WIDTH * HEIGHT);
+    pixels.resize(WIDTH * HEIGHT);
+
+    glGenTextures(1, &texture);
+    glBindTexture(GL_TEXTURE_2D, texture);
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     getCell(100, 100).material = Material::Sand;
 }
@@ -113,7 +129,20 @@ void Game::update(double dt) {
 }
 
 void Game::render(double alpha) {
+    for (int i = 0; i < WIDTH * HEIGHT; ++i) {
+        pixels[i] = materialColor(cells[i].material);
+    }
     glClear(GL_COLOR_BUFFER_BIT);
+    glBindTexture(GL_TEXTURE_2D, texture);
+    glTexSubImage2D(
+        GL_TEXTURE_2D,
+        0,
+        0, 0,
+        WIDTH, HEIGHT,
+        GL_RGBA,
+        GL_UNSIGNED_BYTE,
+        pixels.data()
+    );
     glfwSwapBuffers(window);
 }
 
@@ -123,6 +152,17 @@ Game::Cell& Game::getCell(int x, int y) {
 
 bool Game::isInBounds(int x, int y) {
     return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT;
+}
+
+Game::Color Game::materialColor(Material material) {
+    switch (material) {
+        case Material::Air:   return {25, 25, 25, 255};
+        case Material::Sand:  return {220, 190, 90, 255};
+        case Material::Water: return {50, 100, 230, 255};
+        case Material::Stone: return {120, 120, 120, 255};
+    }
+
+    return {255, 0, 255, 255};
 }
 
 int main() {
