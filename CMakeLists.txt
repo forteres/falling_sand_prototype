@@ -13,6 +13,13 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
 add_subdirectory(external/glfw)
+add_subdirectory(external/glad/cmake glad_cmake)
+
+glad_add_library(
+    glad_gl_core_33
+    REPRODUCIBLE
+    API gl:core=3.3
+)
 
 find_package(OpenGL REQUIRED)
 
@@ -22,4 +29,5 @@ target_link_libraries(falling_sand_prototype
 PRIVATE 
 glfw
 OpenGL::GL
+glad_gl_core_33
 )
