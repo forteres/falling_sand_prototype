@@ -23,6 +23,7 @@ class Game {
 
         struct Cell {
             Material material = Material::Air;
+            bool updated = false;
         };
         vector<Cell> cells;
 
@@ -35,9 +36,20 @@ class Game {
         GLuint vbo = 0;
         GLuint shaderProgram = 0;
 
+        static void keyCallback(
+            GLFWwindow* window,
+            int key,
+            int scancode,
+            int action,
+            int mods
+        );
+
         bool running = true;
 
         GLFWwindow* window = nullptr;
+
+        Material brushMaterial = Material::Sand;
+        uint8_t BRUSH_RADIUS = 5;
 
         void init();
         void update(double dt);
@@ -46,7 +58,8 @@ class Game {
         GLuint createShaderProgram();
         Cell& getCell(int x, int y);        
         bool isInBounds(int x, int y);
-        Color materialColor(Material material);       
+        Color materialColor(Material material);    
+        void handleInput();   
 };
 
 void Game::run(){
@@ -73,6 +86,7 @@ void Game::run(){
 
             render(accumulator / dt);
             glfwPollEvents();
+            handleInput();
         }
 
         glfwDestroyWindow(window);
@@ -105,6 +119,8 @@ void Game::init() {
     glfwWindowHint(GLFW_OPENGL_PROFILE, GLFW_OPENGL_CORE_PROFILE);
 
     glfwMakeContextCurrent(window);
+    glfwSetWindowUserPointer(window, this);
+    glfwSetKeyCallback(window, keyCallback);
     
     if (!gladLoadGL(glfwGetProcAddress)) {
         cerr << "Failed to initialize GLAD\n";
@@ -130,14 +146,66 @@ void Game::init() {
 }
 
 void Game::update(double dt) {
+    for (Cell& cell : cells)
+        cell.updated = false;
     for (int y = HEIGHT - 1; y >= 0; --y) {
         for (int x = 0; x < WIDTH; ++x) {
             Cell& cell = getCell(x, y);
+            if (cell.updated)
+                continue;
             if (cell.material == Material::Sand) {
                 if (isInBounds(x, y + 1)) {
                     Cell& below = getCell(x, y + 1);
+                    if (below.material == Material::Air || below.material == Material::Water) {
+                        swap(cell, below);
+                        below.updated = true;
+                    }
+                }
+            }
+            else if (cell.material == Material::Water) {
+                if (isInBounds(x, y + 1)) {
+                    Cell& below = getCell(x, y + 1);
+
                     if (below.material == Material::Air) {
                         swap(cell, below);
+                        below.updated = true;
+                        continue;
+                    }
+                }
+                if (isInBounds(x - 1, y + 1)) {
+                    Cell& belowLeft = getCell(x - 1, y + 1);
+
+                    if (belowLeft.material == Material::Air) {
+                        swap(cell, belowLeft);
+                        belowLeft.updated = true;
+                        continue;
+                    }
+                }
+                if (isInBounds(x + 1, y + 1)) {
+                    Cell& belowRight = getCell(x + 1, y + 1);
+
+                    if (belowRight.material == Material::Air) {
+                        swap(cell, belowRight);
+                        belowRight.updated = true;
+                        continue;
+                    }
+                }
+                if (isInBounds(x - 1, y)) {
+                    Cell& left = getCell(x - 1, y);
+
+                    if (left.material == Material::Air) {
+                        swap(cell, left);
+                        left.updated = true;
+                        continue;
+                    }
+                }
+                if (isInBounds(x + 1, y)) {
+                    Cell& right = getCell(x + 1, y);
+
+                    if (right.material == Material::Air) {
+                        swap(cell, right);
+                        right.updated = true;
+                        continue;
                     }
                 }
             }
@@ -270,6 +338,62 @@ GLuint Game::createShaderProgram() {
     glDeleteShader(fragmentShader);
 
     return program;
+}
+
+void Game::handleInput() { // some of them
+    // keyboard
+    if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
+        brushMaterial = Material::Sand;
+
+    if (glfwGetKey(window, GLFW_KEY_K) == GLFW_PRESS)
+        brushMaterial = Material::Water;
+
+    if (glfwGetKey(window, GLFW_KEY_L) == GLFW_PRESS)
+        brushMaterial = Material::Stone;
+
+    // mouse
+    if (glfwGetMouseButton(window, GLFW_MOUSE_BUTTON_LEFT) == GLFW_PRESS) {
+        double mouseX, mouseY;
+        glfwGetCursorPos(window, &mouseX, &mouseY);
+
+        int x = static_cast<int>(mouseX);
+        int y = static_cast<int>(mouseY);
+
+        for (int dy = -BRUSH_RADIUS; dy <= BRUSH_RADIUS; ++dy) {
+            for (int dx = -BRUSH_RADIUS; dx <= BRUSH_RADIUS; ++dx) {
+
+                if (dx * dx + dy * dy > BRUSH_RADIUS * BRUSH_RADIUS)
+                    continue;
+
+                int px = x + dx;
+                int py = y + dy;
+
+                if (isInBounds(px, py))
+                    getCell(px, py).material = brushMaterial;
+            }
+        }
+    }
+}
+
+void Game::keyCallback(
+    GLFWwindow* window,
+    int key,
+    int scancode,
+    int action,
+    int mods
+) {
+    if (action != GLFW_PRESS)
+        return;
+
+    Game* game = static_cast<Game*>(
+        glfwGetWindowUserPointer(window)
+    );
+
+    if (key == GLFW_KEY_KP_ADD)
+        game->BRUSH_RADIUS = min<uint8_t>(50, game->BRUSH_RADIUS + 1);
+
+    if (key == GLFW_KEY_KP_SUBTRACT)
+        game->BRUSH_RADIUS = max<uint8_t>(1, game->BRUSH_RADIUS - 1);
 }
 
 Game::Cell& Game::getCell(int x, int y) {
