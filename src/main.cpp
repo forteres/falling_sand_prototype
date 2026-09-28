@@ -18,11 +18,25 @@ class Game {
         void run();
 
     private:
-        static constexpr int WIDTH = 800;
-        static constexpr int HEIGHT = 600;
+        static constexpr int CANVAS_WIDTH = 800;
+        static constexpr int CANVAS_HEIGHT = 600;
+        static constexpr float GRAVITY = 9.81f;
+        static constexpr float airDensity = 1.225f; // change for bandwidth based off Y
+        static constexpr float dragCoeficient = 1.0f; // calculate when bloxplot
+        static constexpr float frontalAreaCoeficient = 1.0f; // calculate when bloxplot
+
+        int windowWidth = 1200;
+        int windowHeight = 900;
 
         struct Cell {
             Material material = Material::Air;
+
+            float velocityX = 0.0f;
+            float velocityY = 0.0f;
+
+            float remainderVX = 0.0f;
+            float remainderVY = 0.0f;
+
             bool updated = false;
         };
         vector<Cell> cells;
@@ -56,9 +70,11 @@ class Game {
         void render(double alpha);
         void initRenderer();
         GLuint createShaderProgram();
+        static void framebufferSizeCallback(GLFWwindow* window,int width,int height);
         Cell& getCell(int x, int y);        
         bool isInBounds(int x, int y);
         Color materialColor(Material material);    
+        float materialMass(Material material);   
         void handleInput();   
 };
 
@@ -101,8 +117,8 @@ void Game::init() {
     }
 
     window = glfwCreateWindow(
-        WIDTH,
-        HEIGHT,
+        windowWidth,
+        windowHeight,
         "Falling Sand Prototype",
         nullptr,
         nullptr
@@ -127,10 +143,32 @@ void Game::init() {
         running = false;
         return;
     }
+
+    glfwSetFramebufferSizeCallback(
+        window,
+        framebufferSizeCallback
+    );
+
+    int framebufferWidth;
+    int framebufferHeight;
+
+    glfwGetFramebufferSize(
+        window,
+        &framebufferWidth,
+        &framebufferHeight
+    );
+
+    glViewport(
+        0,
+        0,
+        framebufferWidth,
+        framebufferHeight
+    );
+
     glClearColor(0.1f, 0.1f, 0.1f, 1.0f);
 
-    cells.resize(WIDTH * HEIGHT);
-    pixels.resize(WIDTH * HEIGHT);
+    cells.resize(CANVAS_WIDTH * CANVAS_HEIGHT);
+    pixels.resize(CANVAS_WIDTH * CANVAS_HEIGHT);
 
     glGenTextures(1, &texture);
     glBindTexture(GL_TEXTURE_2D, texture);
@@ -138,18 +176,23 @@ void Game::init() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, WIDTH, HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, CANVAS_WIDTH, CANVAS_HEIGHT, 0, GL_RGBA, GL_UNSIGNED_BYTE, nullptr);
 
     initRenderer();
 
-    getCell(100, 100).material = Material::Sand;
+    //getCell(100, 100).material = Material::Sand;
 }
 
 void Game::update(double dt) {
-    for (Cell& cell : cells)
+    for (Cell& cell : cells){
         cell.updated = false;
-    for (int y = HEIGHT - 1; y >= 0; --y) {
-        for (int x = 0; x < WIDTH; ++x) {
+        if (cell.material == Material::Air)
+            continue;
+        //accx = 
+    }
+
+    for (int y = CANVAS_HEIGHT - 1; y >= 0; --y) {
+        for (int x = 0; x < CANVAS_WIDTH; ++x) {
             Cell& cell = getCell(x, y);
             if (cell.updated)
                 continue;
@@ -214,7 +257,7 @@ void Game::update(double dt) {
 }
 
 void Game::render(double alpha) {
-    for (int i = 0; i < WIDTH * HEIGHT; ++i) {
+    for (int i = 0; i < CANVAS_WIDTH * CANVAS_HEIGHT; ++i) {
         pixels[i] = materialColor(cells[i].material);
     }
     glClear(GL_COLOR_BUFFER_BIT);
@@ -223,7 +266,7 @@ void Game::render(double alpha) {
         GL_TEXTURE_2D,
         0,
         0, 0,
-        WIDTH, HEIGHT,
+        CANVAS_WIDTH, CANVAS_HEIGHT,
         GL_RGBA,
         GL_UNSIGNED_BYTE,
         pixels.data()
@@ -340,6 +383,51 @@ GLuint Game::createShaderProgram() {
     return program;
 }
 
+void Game::framebufferSizeCallback(
+    GLFWwindow* window,
+    int width,
+    int height
+) {
+    float canvasAspect =
+        static_cast<float>(CANVAS_WIDTH) /
+        static_cast<float>(CANVAS_HEIGHT);
+
+    float windowAspect =
+        static_cast<float>(width) /
+        static_cast<float>(height);
+
+    int viewportWidth;
+    int viewportHeight;
+    int viewportX;
+    int viewportY;
+
+    if (windowAspect > canvasAspect) {
+        // window is wider
+        viewportHeight = height;
+        viewportWidth =
+            static_cast<int>(height * canvasAspect);
+
+        viewportX = (width - viewportWidth) / 2;
+        viewportY = 0;
+    }
+    else {
+        // window is taller
+        viewportWidth = width;
+        viewportHeight =
+            static_cast<int>(width / canvasAspect);
+
+        viewportX = 0;
+        viewportY = (height - viewportHeight) / 2;
+    }
+
+    glViewport(
+        viewportX,
+        viewportY,
+        viewportWidth,
+        viewportHeight
+    );
+}
+
 void Game::handleInput() { // some of them
     // keyboard
     if (glfwGetKey(window, GLFW_KEY_J) == GLFW_PRESS)
@@ -356,8 +444,64 @@ void Game::handleInput() { // some of them
         double mouseX, mouseY;
         glfwGetCursorPos(window, &mouseX, &mouseY);
 
-        int x = static_cast<int>(mouseX);
-        int y = static_cast<int>(mouseY);
+        int framebufferWidth, framebufferHeight;
+        glfwGetFramebufferSize(
+            window,
+            &framebufferWidth,
+            &framebufferHeight
+        );
+
+        float canvasAspect =
+            static_cast<float>(CANVAS_WIDTH) /
+            static_cast<float>(CANVAS_HEIGHT);
+
+        float windowAspect =
+            static_cast<float>(framebufferWidth) /
+            static_cast<float>(framebufferHeight);
+
+        int viewportWidth;
+        int viewportHeight;
+        int viewportX;
+        int viewportY;
+
+        if (windowAspect > canvasAspect) {
+            viewportHeight = framebufferHeight;
+            viewportWidth =
+                static_cast<int>(framebufferHeight * canvasAspect);
+
+            viewportX = (framebufferWidth - viewportWidth) / 2;
+            viewportY = 0;
+        }
+        else {
+            viewportWidth = framebufferWidth;
+            viewportHeight =
+                static_cast<int>(framebufferWidth / canvasAspect);
+
+            viewportX = 0;
+            viewportY =
+                (framebufferHeight - viewportHeight) / 2;
+        }
+
+        if (
+            mouseX < viewportX ||
+            mouseX >= viewportX + viewportWidth ||
+            mouseY < viewportY ||
+            mouseY >= viewportY + viewportHeight
+        ) {
+            return;
+        }
+
+        int x = static_cast<int>(
+            (mouseX - viewportX) *
+            CANVAS_WIDTH /
+            viewportWidth
+        );
+
+        int y = static_cast<int>(
+            (mouseY - viewportY) *
+            CANVAS_HEIGHT /
+            viewportHeight
+        );
 
         for (int dy = -BRUSH_RADIUS; dy <= BRUSH_RADIUS; ++dy) {
             for (int dx = -BRUSH_RADIUS; dx <= BRUSH_RADIUS; ++dx) {
@@ -397,11 +541,11 @@ void Game::keyCallback(
 }
 
 Game::Cell& Game::getCell(int x, int y) {
-    return cells[y * WIDTH + x];
+    return cells[y * CANVAS_WIDTH + x];
 }
 
 bool Game::isInBounds(int x, int y) {
-    return x >= 0 && x < WIDTH && y >= 0 && y < HEIGHT;
+    return x >= 0 && x < CANVAS_WIDTH && y >= 0 && y < CANVAS_HEIGHT;
 }
 
 Game::Color Game::materialColor(Material material) {
@@ -413,6 +557,16 @@ Game::Color Game::materialColor(Material material) {
     }
 
     return {255, 0, 255, 255};
+}
+
+float Game::materialMass(Material material) {
+    switch (material) {
+        case Material::Sand:  return 1600.0f;
+        case Material::Water: return 1000.0f;
+        case Material::Stone: return 2500.0f;
+    }
+
+    return 1.225f;
 }
 
 int main() {
